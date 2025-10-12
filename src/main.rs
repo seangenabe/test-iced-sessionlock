@@ -10,17 +10,22 @@ pub fn main() -> Result<(), iced_sessionlock::Error> {
   Counter::run(Settings::default())
 }
 
-struct Counter {
-  value: std::sync::atomic::AtomicI32,
+#[derive(Default)]
+struct WindowData {
+  value: i32,
   text: String,
+}
+
+struct Counter {
+  state: std::collections::HashMap<iced::window::Id, WindowData>,
 }
 
 #[to_session_message]
 #[derive(Debug, Clone)]
 enum Message {
-  IncrementPressed,
-  DecrementPressed,
-  TextInput(String),
+  IncrementPressed(iced::window::Id),
+  DecrementPressed(iced::window::Id),
+  TextInput((iced::window::Id, String)),
   IcedEvent(Event),
   WindowOpened(iced::window::Id),
 }
@@ -34,8 +39,7 @@ impl MultiApplication for Counter {
   fn new(_flags: ()) -> (Self, Command<Message>) {
     (
       Self {
-        value: 0.into(),
-        text: "eee".to_string(),
+        state: std::collections::HashMap::new(),
       },
       Command::none(),
     )
@@ -66,36 +70,55 @@ impl MultiApplication for Counter {
   fn update(&mut self, message: Message) -> Command<Message> {
     match message {
       Message::IcedEvent(event) => {
-        println!("hello {event:?}");
+        // println!("hello {event:?}");
         Command::none()
       }
-      Message::IncrementPressed => {
-        *self.value.get_mut() += 1;
+      Message::IncrementPressed(id) => {
+        if let Some(w) = self.state.get_mut(&id) {
+          w.value += 1;
+        }
         Command::none()
       }
-      Message::DecrementPressed => {
-        *self.value.get_mut() -= 1;
+      Message::DecrementPressed(id) => {
+        if let Some(w) = self.state.get_mut(&id) {
+          w.value -= 1;
+        }
         Command::none()
       }
-      Message::TextInput(text) => {
-        self.text = text;
+      Message::TextInput((id, text)) => {
+        self.state.get_mut(&id).unwrap().text = text.clone();
         Command::none()
       }
-      Message::WindowOpened(Id) => Command::none(),
+      Message::WindowOpened(id) => {
+        println!("opened window id {:?}", id);
+        self.state.insert(id, WindowData::default());
+        Command::none()
+      }
       Message::UnLock => Command::done(message),
     }
   }
 
-  fn view(&self, _id: iced::window::Id) -> Element<Message> {
+  fn view(&self, id: iced::window::Id) -> Element<'_, Message> {
+    let id2 = id.clone();
+    println!("view on window id {:?}", id2);
     column![
       Space::with_height(Length::Fill),
-      button("Increment").on_press(Message::IncrementPressed),
+      button("Increment").on_press(Message::IncrementPressed(id)),
       button("Lock").on_press(Message::UnLock),
-      text(self.value.load(std::sync::atomic::Ordering::Relaxed)).size(50),
-      text_input("hello", &self.text)
-        .on_input(Message::TextInput)
-        .padding(10),
-      button("Decrement").on_press(Message::DecrementPressed),
+      text(
+        self
+          .state
+          .get(&id)
+          .map_or("loading...".to_string(), |d| d.value.to_string())
+      )
+      .size(50),
+      text_input(
+        "hello",
+        &self.state.get(&id).map_or("loading...", |d| &d.text)
+      )
+      .on_input(move |text| Message::TextInput((id2, text.clone())))
+      .padding(10),
+      button("Decrement").on_press(Message::DecrementPressed(id)),
       Space::with_height(Length::Fill),
     ]
     .padding(20)
