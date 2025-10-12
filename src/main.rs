@@ -116,8 +116,11 @@ impl MultiApplication for Counter {
         "hello",
         &self.state.get(&id).map_or("loading...", |d| &d.text)
       )
-      .on_input(move |text| Message::TextInput((id2, text.clone())))
-      .padding(10),
+      .on_input(move |text| Message::TextInput((id2, text.clone()))),
+      text(format!(
+        "text is {}",
+        self.state.get(&id).map_or("loading...", |d| &d.text)
+      )),
       button("Decrement").on_press(Message::DecrementPressed(id)),
       Space::with_height(Length::Fill),
     ]
