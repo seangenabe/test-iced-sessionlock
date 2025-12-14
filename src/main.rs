@@ -1,21 +1,22 @@
-use iced::widget::{Space, button, column, text, text_input};
-use iced::{Alignment, Element, Event, Length, Task as Command, Theme, event};
+use iced::widget::{button, column, text, text_input};
+use iced::{Alignment, Element, Event, Length, Task as Command, event};
 
-use iced_sessionlock::MultiApplication;
-use iced_sessionlock::actions::UnLockAction;
-use iced_sessionlock::settings::Settings;
+use iced_sessionlock::application;
 use iced_sessionlock::to_session_message;
 
 pub fn main() -> Result<(), iced_sessionlock::Error> {
-  Counter::run(Settings::default())
+  application(Counter::new, Counter::update, Counter::view)
+    .subscription(Counter::subscription)
+    .run()
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct WindowData {
   value: i32,
   text: String,
 }
 
+#[derive(Debug)]
 struct Counter {
   state: std::collections::HashMap<iced::window::Id, WindowData>,
 }
@@ -30,13 +31,8 @@ enum Message {
   WindowOpened(iced::window::Id),
 }
 
-impl MultiApplication for Counter {
-  type Message = Message;
-  type Flags = ();
-  type Theme = Theme;
-  type Executor = iced::executor::Default;
-
-  fn new(_flags: ()) -> (Self, Command<Message>) {
+impl Counter {
+  fn new() -> (Self, Command<Message>) {
     (
       Self {
         state: std::collections::HashMap::new(),
@@ -45,11 +41,7 @@ impl MultiApplication for Counter {
     )
   }
 
-  fn namespace(&self) -> String {
-    String::from("Counter - Iced")
-  }
-
-  fn subscription(&self) -> iced::Subscription<Self::Message> {
+  fn subscription(&self) -> iced::Subscription<Message> {
     let window_open = event::listen_with(|event, _status, id| match event {
       Event::Window(window_event) => match window_event {
         iced::window::Event::Opened {
@@ -74,24 +66,22 @@ impl MultiApplication for Counter {
         Command::none()
       }
       Message::IncrementPressed(id) => {
-        if let Some(w) = self.state.get_mut(&id) {
-          w.value += 1;
-        }
+        let w = self.state.entry(id).or_default();
+        w.value += 1;
         Command::none()
       }
       Message::DecrementPressed(id) => {
-        if let Some(w) = self.state.get_mut(&id) {
-          w.value -= 1;
-        }
+        let w = self.state.entry(id).or_default();
+        w.value -= 1;
         Command::none()
       }
       Message::TextInput((id, text)) => {
-        self.state.get_mut(&id).unwrap().text = text.clone();
+        let w = self.state.entry(id).or_default();
+        w.text = text;
         Command::none()
       }
       Message::WindowOpened(id) => {
-        println!("opened window id {:?}", id);
-        self.state.insert(id, WindowData::default());
+        let _ = self.state.entry(id).or_default();
         Command::none()
       }
       Message::UnLock => Command::done(message),
@@ -99,30 +89,26 @@ impl MultiApplication for Counter {
   }
 
   fn view(&self, id: iced::window::Id) -> Element<'_, Message> {
-    let id2 = id.clone();
-    println!("view on window id {:?}", id2);
+    println!("view on window id {:?}", id);
+    dbg!(&self.state);
+    let text_input_string: &str = match self.state.get(&id) {
+      Some(d) => &d.text,
+      None => &"loading...".to_string(),
+    };
     column![
-      Space::with_height(Length::Fill),
       button("Increment").on_press(Message::IncrementPressed(id)),
       button("Lock").on_press(Message::UnLock),
       text(
         self
           .state
           .get(&id)
-          .map_or("loading...".to_string(), |d| d.value.to_string())
+          .map_or("loading...".to_string(), |d| { d.value.to_string() })
       )
       .size(50),
-      text_input(
-        "hello",
-        &self.state.get(&id).map_or("loading...", |d| &d.text)
-      )
-      .on_input(move |text| Message::TextInput((id2, text.clone()))),
-      text(format!(
-        "text is {}",
-        self.state.get(&id).map_or("loading...", |d| &d.text)
-      )),
+      text_input("hello", &text_input_string)
+        .on_input(move |text| Message::TextInput((id, text.clone()))),
+      text(format!("text is {}", text_input_string)),
       button("Decrement").on_press(Message::DecrementPressed(id)),
-      Space::with_height(Length::Fill),
     ]
     .padding(20)
     .align_x(Alignment::Center)
